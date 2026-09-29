@@ -1,0 +1,20 @@
+# Run from the repo root:
+#   docker compose -f docker/docker-compose.yml up -d --build
+#   docker compose -f docker/docker-compose.yml logs -f
+#   docker compose -f docker/docker-compose.yml down
+#
+# Reads ../config.yaml and ../.env. Keep paths.data relative (./data) so it
+# lands in the mounted folder.
+name: amsense
+services:
+  collector:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: amsense:latest
+    restart: unless-stopped
+    stop_grace_period: 30s
+    env_file: ../.env
+    volumes:
+      - ../config.yaml:/app/config.yaml:ro
+      - ../data:/app/data

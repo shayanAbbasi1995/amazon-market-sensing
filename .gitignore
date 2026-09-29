@@ -1,0 +1,30 @@
+# secrets and local config
+.env
+config.yaml
+config.*.yaml
+!config.example.yaml
+
+# data: nothing collected or derived is ever committed
+data/
+*.parquet
+*.parquet.partial
+*.json.gz
+*.jsonl
+*.csv
+*.log
+visited_keepa.txt
+
+# python
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# editors / tools
+.claude/
+.vscode/
+.idea/
+.DS_Store
