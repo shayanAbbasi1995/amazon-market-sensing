@@ -1,6 +1,7 @@
 """Command line: ``python -m amsense <command> [options]``.
 
 mcauley    download the configured McAuley category, filtered to review_window
+asins      build the seed ASIN list from asins.source (mcauley, file, keepa_finder, keepa_bestsellers)
 collect    pull Keepa histories (reference marketplace first, then the rest)
 universe   build the shared ASIN universe from the reference marketplace
 panels     build monthly / weekly panels per marketplace
@@ -69,6 +70,12 @@ def cmd_collect(args: argparse.Namespace, settings: config.Settings) -> None:
         collect.collect(settings, locale, asins, resume=not args.no_resume)
 
 
+def cmd_asins(args: argparse.Namespace, settings: config.Settings) -> None:
+    from amsense import asins
+
+    asins.build_seed(settings, force=args.force)
+
+
 def cmd_universe(args: argparse.Namespace, settings: config.Settings) -> None:
     from amsense import universe
 
@@ -127,6 +134,10 @@ def main(argv: list[str] | None = None) -> None:
         "--reprocess-raw", action="store_true", help="rebuild parquet tables from the raw JSON archive (0 tokens)"
     )
     p.set_defaults(func=cmd_collect)
+
+    p = sub.add_parser("asins", help="build the seed ASIN list (collect builds it if missing)")
+    p.add_argument("--force", action="store_true", help="rebuild an existing seed list")
+    p.set_defaults(func=cmd_asins)
 
     p = sub.add_parser("universe", help="build the shared ASIN universe")
     p.add_argument("--force", action="store_true", help="overwrite an existing universe")

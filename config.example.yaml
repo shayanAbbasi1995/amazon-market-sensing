@@ -1,6 +1,7 @@
 # Copy to config.yaml and edit. Secrets (your Keepa key) go in .env, not here.
 
-# Any McAuley Amazon Reviews 2023 category, spelled as in the dataset:
+# A McAuley Amazon Reviews 2023 category (spelled as below), or any folder label
+# if you bring your own ASINs (see `asins`):
 # All_Beauty, Amazon_Fashion, Appliances, Arts_Crafts_and_Sewing, Automotive,
 # Baby_Products, Beauty_and_Personal_Care, Books, CDs_and_Vinyl,
 # Cell_Phones_and_Accessories, Clothing_Shoes_and_Jewelry, Digital_Music,
@@ -12,13 +13,30 @@
 # Tools_and_Home_Improvement, Toys_and_Games, Video_Games
 category: Electronics
 
-# Products enter the sample if they received a review in this window.
-# McAuley data ends in September 2023; Keepa histories run to today.
+# Which ASINs to collect in the reference marketplace. `category` above is
+# also the output folder name, so with a non-McAuley source it can be any label.
+#   mcauley            products reviewed in review_window (below)
+#   file               your own list: .txt (one ASIN per line), .csv or .parquet
+#   keepa_finder       a Keepa Product Finder query: build it on keepa.com, click
+#                      "Show API query" and save the JSON (costs tokens)
+#   keepa_bestsellers  best-seller lists of Amazon category node ids (costs tokens)
+# With Docker, keep `file` / `finder_selection` inside ./data so the container sees them.
+asins:
+  source: mcauley
+  file: null                    # e.g. ./data/my_asins.txt
+  column: asin                  # ASIN column for .csv / .parquet files
+  finder_selection: null        # e.g. ./data/finder.json
+  bestseller_categories: []     # e.g. [172282, 281052]
+  max_asins: null               # optional cap on the seed list
+
+# Products enter the sample if they received a review in this window
+# (mcauley source only). McAuley data ends in September 2023; Keepa histories
+# run to today.
 review_window:
   start: 2023-01-01
   end: 2023-12-31
 
-# Keepa marketplaces to collect: us uk de fr jp ca it es in mx
+# Keepa marketplaces to collect: us uk de fr jp ca it es in mx br
 # All share one token bucket, so they are collected one after another.
 marketplaces: [us, uk, de, fr, ca, it, es]
 
@@ -54,6 +72,7 @@ paths:
   data: ./data
   reviews:  "{data}/{category}/mcauley/reviews.parquet"
   metadata: "{data}/{category}/mcauley/metadata.parquet"
+  seed:     "{data}/{category}/seed_asins.parquet"
   universe: "{data}/{category}/universe.parquet"
   keepa:    "{data}/{category}/keepa/{CODE}"
   panels:   "{data}/{category}/panels/{CODE}"

@@ -9,9 +9,8 @@ Keepa ``product["csv"]`` is a list indexed by *CsvType*. Each entry is either
 "no data at this point" and is dropped.
 
 Scaling by series:
-  * prices: integer minor units -> /price_divisor (100 for USD/EUR/GBP/CAD cents;
-    pass 1 for JPY, which has no minor unit. Check a known product before a
-    first run in a new currency.)
+  * prices: integers in the locale's smallest currency unit -> /price_divisor
+    (100 for cents; 1 for yen, per Keepa's api_backend Product.java)
   * rating: integer **0-50** -> /10.0 stars (0-5)
   * ranks / offer counts: raw integer
 

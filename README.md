@@ -4,10 +4,12 @@ Build a longitudinal, cross-country panel of Amazon products by combining McAule
 
 McAuley's data stops in September 2023. Its product IDs still make a good sampling frame, because every product in it received real customer reviews. This pipeline takes the child ASINs of one McAuley category, pulls each one's full Keepa history in a reference marketplace (the US by default), then queries the same ASIN list in other Amazon marketplaces. Each country gets monthly and weekly panels keyed on the same `asin`, running from 2011 to the day you collect.
 
+McAuley is the default starting list. You can also start from your own ASIN file, a Keepa Product Finder query or Amazon best-seller lists.
+
 ```
-McAuley reviews (one category) -> child ASINs -> Keepa, US -> universe (has a US price, top 1% by price dropped)
-                                                                  |
-                                    Keepa, UK / DE / FR / CA / ... <-+-> cleaned monthly and weekly panels
+seed ASINs (McAuley category, your own list or a Keepa query)
+  -> Keepa, US -> universe (has a US price, top 1% by price dropped)
+  -> Keepa, UK / DE / FR / CA / ... -> cleaned monthly and weekly panels per country
 ```
 
 ## Quick start
@@ -20,7 +22,7 @@ pip install -e .
 cp .env.example .env                  # paste your KEEPA_API_KEY
 cp config.example.yaml config.yaml    # choose the category and marketplaces
 
-python -m amsense mcauley             # reviews and metadata for the category
+python -m amsense mcauley             # reviews and metadata (only for asins.source: mcauley)
 python -m amsense collect -m us       # reference marketplace
 python -m amsense universe            # the shared ASIN list
 python -m amsense collect             # every other marketplace in config.yaml
@@ -29,7 +31,13 @@ python -m amsense fx                  # optional: monthly FX rates for price com
 python -m amsense figures             # optional: the charts below, from your own data
 ```
 
-`category` in `config.yaml` takes any of the 33 McAuley categories, and `marketplaces` any of `us uk de fr jp ca it es in mx`. Check your key on two products first with `python -m amsense collect -m us --asins B08L5NP6NG,B08J8FFJ8H`. For a multi-week run, `docker compose -f docker/docker-compose.yml up -d --build` runs the whole sequence and resumes after a crash or reboot.
+Three settings in `config.yaml` decide what you collect:
+
+- `asins.source` picks the starting products: `mcauley` (products reviewed in `review_window`), `file` (a .txt, .csv or .parquet list), `keepa_finder` (a Product Finder query exported from keepa.com with "Show API query") or `keepa_bestsellers` (Amazon category node ids).
+- `category` is one of the 33 McAuley categories, or any folder name when you bring your own ASINs.
+- `marketplaces` takes any of the 11 stores in Keepa's API: `us uk de fr jp ca it es in mx br`.
+
+Check your key on two products first with `python -m amsense collect -m us --asins B08L5NP6NG,B08J8FFJ8H`. For a multi-week run, `docker compose -f docker/docker-compose.yml up -d --build` runs the whole sequence and resumes after a crash or reboot.
 
 ## Output
 
@@ -78,7 +86,8 @@ November 21, 2024, when Amazon's Black Friday week started, had the most price c
 - Buy-box and shipping-inclusive prices need Keepa's paid `offers` parameter and are not collected.
 - Keepa stores a point only when a value changes. `monthly_obs` keeps the gaps; the `_locf` panels carry the last value forward.
 - Sales rank is relative to a category and is not comparable across marketplaces.
-- At the time of these figures, Italy had been queried for 52% of the universe and Spain not yet. Japanese prices are scaled on the assumption that Keepa stores whole yen; this is untested.
+- At the time of these figures, Italy had been queried for 52% of the universe and Spain not yet. Japan, India, Mexico and Brazil are supported but not yet collected. Prices are scaled by Keepa's documented units (cents, or whole yen).
+- The `keepa_finder` and `keepa_bestsellers` sources are tested against recorded response shapes, not yet against a live key.
 - Keepa data is subject to Keepa's terms of service.
 
 ## Citation

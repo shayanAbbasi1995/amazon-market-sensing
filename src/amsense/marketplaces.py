@@ -3,6 +3,10 @@
 Keepa addresses each Amazon storefront by an integer ``domain``. The same ASIN
 can be queried against any of them; an ASIN that is not listed in a marketplace
 comes back as ``not_found`` and costs 0 tokens (we always send ``update=-1``).
+
+The list below is every locale in Keepa's official API client
+(keepacom/api_backend, AmazonLocale.java). Domain 7 (amazon.cn) is reserved
+and no longer served.
 """
 
 from __future__ import annotations
@@ -24,8 +28,8 @@ class Marketplace:
 
     @property
     def price_divisor(self) -> float:
-        """Keepa stores prices as integers in the currency's minor unit (cents).
-        The yen has no minor unit."""
+        """Keepa stores prices as integers in "the respective Amazon locale's
+        smallest currency unit (e.g. euro cents or yen)" (api_backend Product.java)."""
         return 1.0 if self.currency == "JPY" else 100.0
 
 
@@ -42,6 +46,7 @@ MARKETPLACES: dict[str, Marketplace] = {
         Marketplace("es", 9, "EUR", "Spain"),
         Marketplace("in", 10, "INR", "India"),
         Marketplace("mx", 11, "MXN", "Mexico"),
+        Marketplace("br", 12, "BRL", "Brazil"),
     )
 }
 

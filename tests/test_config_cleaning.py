@@ -68,3 +68,43 @@ def test_where_clause_drops_sentinels_and_placeholders(settings):
     )
     kept = con.execute(f"SELECT value FROM d WHERE {cleaning.daily_where_sql(rules)} ORDER BY value").fetchall()
     assert kept == [(0.01,), (19.99,)]
+
+
+def test_every_keepa_marketplace_is_supported(tmp_path):
+    """All 11 Keepa locales load from config and get cleaning thresholds in their currency."""
+    codes = list(marketplaces.MARKETPLACES)
+    assert codes == ["us", "uk", "de", "fr", "jp", "ca", "it", "es", "in", "mx", "br"]
+    (tmp_path / "config.yaml").write_text(
+        f"category: All_Beauty\nmarketplaces: [{', '.join(codes)}]\n", encoding="utf-8"
+    )
+    s = config.load(tmp_path / "config.yaml")
+    for code in codes:
+        m = marketplaces.get(code)
+        rules = cleaning.rules_for(m, s)
+        assert rules.currency == m.currency and rules.price_ceiling > 0
+        assert m.price_divisor == (1.0 if m.currency == "JPY" else 100.0)
+
+
+def test_fx_converts_every_currency_to_usd(settings, monkeypatch, tmp_path):
+    from amsense import fx
+
+    (tmp_path / "config.yaml").write_text(
+        "category: All_Beauty\nmarketplaces: [us, uk, de, jp, ca, in, mx, br]\npaths: {data: ./d}\n", encoding="utf-8"
+    )
+    s = config.load(tmp_path / "config.yaml")
+    cad_per = {"USD": 1.40, "GBP": 1.87, "EUR": 1.61, "JPY": 0.009, "INR": 0.0148, "MXN": 0.0794, "BRL": 0.2717}
+    obs = [{"d": "2026-09-28", **{f"FX{c}CAD": {"v": str(v)} for c, v in cad_per.items()}}]
+
+    class Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"observations": obs}
+
+    monkeypatch.setattr(fx.requests, "get", lambda *a, **k: Resp())
+    out = fx.fetch(s).set_index("currency")["usd_per_unit"]
+    assert set(out.index) == {"USD", "GBP", "EUR", "JPY", "CAD", "INR", "MXN", "BRL"}
+    assert out["USD"] == 1.0
+    assert abs(out["CAD"] - 1 / 1.40) < 1e-9
+    assert abs(out["BRL"] - 0.2717 / 1.40) < 1e-9

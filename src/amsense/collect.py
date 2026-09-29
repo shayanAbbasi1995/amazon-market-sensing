@@ -11,7 +11,8 @@ Durability model:
     table from the raw archive for 0 tokens.
 
 Which ASINs:
-  * reference marketplace: the child ``asin`` values in the McAuley reviews
+  * reference marketplace: the seed list from ``asins.source`` (McAuley, your own
+    file, or a Keepa Product Finder / best-seller query; see asins.py)
   * every other marketplace: the shared universe built by ``amsense universe``
     (so cross-country differences in coverage are findings, not filtering)
 """
@@ -90,13 +91,11 @@ def asins_from_file(path: Path) -> list[str]:
 
 
 def default_asins(settings: Settings, locale: str) -> list[str]:
-    """McAuley child ASINs for the reference marketplace, the universe elsewhere."""
+    """The seed list for the reference marketplace, the shared universe elsewhere."""
     if locale == settings.reference_marketplace:
-        if not settings.reviews_path.exists():
-            raise SystemExit(
-                f"McAuley reviews not found at {settings.reviews_path}. Run `python -m amsense mcauley` first."
-            )
-        return asins_from_parquet(settings.reviews_path)
+        from amsense.asins import load_seed
+
+        return load_seed(settings)
     if not settings.universe_path.exists():
         raise SystemExit(
             f"{locale}: the shared ASIN universe {settings.universe_path} does not exist yet. Collect "

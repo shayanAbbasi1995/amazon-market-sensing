@@ -1,6 +1,6 @@
 """Build the shared ASIN universe from the reference marketplace.
 
-Universe = McAuley child ASINs that have a current price (> 0) in the reference
+Universe = seed ASINs (see asins.py) that have a current price (> 0) in the reference
 marketplace's Keepa snapshot, minus those above the ``price_quantile_cut``
 quantile of that price. Every other marketplace is queried with exactly this
 list, so an ASIN missing from, say, the Canadian panel means Keepa has no data
@@ -35,18 +35,20 @@ def build(settings: Settings, force: bool = False) -> int:
     con = duckdb.connect()
     con.execute(f"CREATE VIEW snapshot AS SELECT * FROM read_parquet({snap!r})")
     con.execute(f"CREATE VIEW coverage AS SELECT * FROM read_parquet({cov!r})")
-    con.execute(f"CREATE VIEW reviews AS SELECT asin FROM read_parquet('{settings.reviews_path.as_posix()}')")
+    if not settings.seed_path.exists():
+        raise SystemExit(f"seed list {settings.seed_path} not found; collect the reference marketplace first")
+    con.execute(f"CREATE VIEW seed AS SELECT asin FROM read_parquet('{settings.seed_path.as_posix()}')")
 
     con.execute("""
         CREATE TEMP TABLE pool AS
         SELECT asin, any_value(price) AS current_price FROM snapshot
-        WHERE asin IN (SELECT asin FROM reviews) AND price > 0
+        WHERE asin IN (SELECT asin FROM seed) AND price > 0
         GROUP BY asin
     """)
     cutoff = con.execute(f"SELECT quantile_cont(current_price, {q}) FROM pool").fetchone()[0]
     funnel = con.execute(f"""
         SELECT
-          (SELECT count(DISTINCT asin) FROM reviews)                                  AS mcauley_child_asins,
+          (SELECT count(DISTINCT asin) FROM seed)                                     AS seed_asins,
           (SELECT count(DISTINCT asin) FROM coverage WHERE found_in_keepa)            AS found_in_keepa,
           (SELECT count(*) FROM pool)                                                 AS with_current_price,
           (SELECT count(*) FROM pool WHERE current_price > {cutoff})                  AS dropped_above_cut,

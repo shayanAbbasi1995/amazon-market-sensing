@@ -63,6 +63,7 @@ USD_PER_UNIT: dict[str, float] = {
     "JPY": 0.0067,
     "INR": 0.012,
     "MXN": 0.055,
+    "BRL": 0.19,
 }
 
 

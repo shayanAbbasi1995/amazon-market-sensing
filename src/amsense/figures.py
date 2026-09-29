@@ -35,19 +35,14 @@ from amsense.storage import valid_parts
 
 log = logging.getLogger(__name__)
 
-# Chart chrome and a validated categorical order, fixed per marketplace.
+# Chart chrome and a CVD-validated categorical order (8 slots). Slots go to
+# marketplaces in config order, so a color always means the same store within
+# one config. Line charts show at most 8 marketplaces; a 9th hue would not be
+# distinguishable, so extra stores are named in the figure note instead.
 SURFACE, INK, INK2, MUTED, GRID, BASE = "#fcfcfb", "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c2b7"
 BAND = "#f0efec"
-COLORS = {
-    "us": "#2a78d6",
-    "uk": "#eb6834",
-    "de": "#1baf7a",
-    "fr": "#eda100",
-    "ca": "#e87ba4",
-    "it": "#008300",
-    "es": "#4a3aa7",
-    "jp": "#e34948",
-}
+PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"]
+COLORS: dict[str, str] = {}  # filled by Data() for the marketplaces in this run
 SEQ = LinearSegmentedColormap.from_list("seq", ["#cde2fb", "#86b6ef", "#2a78d6", "#184f95", "#0d366b"])
 MCAULEY_END = pd.Timestamp("2023-09-01")
 MIN_QUERIED = 0.95  # a marketplace enters cross-country coverage figures once this share is queried
@@ -196,6 +191,12 @@ class Data:
         self.locales = [m for m in settings.marketplaces if (settings.panels_dir(m) / "monthly_obs").is_dir()]
         if not self.locales:
             raise SystemExit("no built panels found; run `python -m amsense panels` first")
+        COLORS.clear()
+        COLORS.update(zip(self.locales, PALETTE, strict=False))
+        self.lines = self.locales[: len(PALETTE)]  # marketplaces drawn as lines
+        self.omitted = self.locales[len(PALETTE) :]
+        if self.omitted:
+            log.warning("line charts show %d marketplaces; left out: %s", len(PALETTE), self.omitted)
         for p in ("monthly_obs", "monthly_locf"):
             union = " UNION ALL BY NAME ".join(
                 f"SELECT '{m}' AS mkt, * FROM read_parquet('{(settings.panels_dir(m) / p).as_posix()}/*.parquet')"
@@ -234,6 +235,11 @@ class Data:
     def df(self, sql: str) -> pd.DataFrame:
         return self.con.execute(sql).fetchdf()
 
+    def lines_note(self) -> str:
+        if not self.omitted:
+            return ""
+        return "\nNot drawn (8-line limit): " + ", ".join(m.upper() for m in self.omitted) + "."
+
 
 # ── figures ──────────────────────────────────────────────────────────────────
 def fig_coverage(d: Data) -> None:
@@ -251,7 +257,7 @@ def fig_coverage(d: Data) -> None:
     fig.subplots_adjust(left=0.17, right=0.95, top=0.76, bottom=0.16)
     y = np.arange(len(df))
     ax.set_axisbelow(True)
-    ax.barh(y, df["share"], height=0.5, color=COLORS[ref])
+    ax.barh(y, df["share"], height=0.5, color=PALETTE[0])
     for yi, (_, r) in zip(y, df.iterrows(), strict=True):
         ax.text(r["share"] + 0.012, yi, f"{r['share']:.0%}  ({r['with_history']:,.0f})", va="center", fontsize=9)
     ax.set_yticks(y, [mkt.get(m).country for m in df.index], color=INK)
@@ -310,30 +316,30 @@ def fig_tracked(d: Data) -> None:
         WHERE ({d.price_sql}) IS NOT NULL AND period >= DATE '2014-01-01'
         GROUP BY 1, 2 ORDER BY 1, 2
     """)
-    wide = df.pivot(index="period", columns="mkt", values="n")[d.locales]
+    wide = df.pivot(index="period", columns="mkt", values="n")[d.lines]
     wide.index = pd.to_datetime(wide.index)
     log.info("ASINs with a recorded price change, Septembers:\n%s", wide[wide.index.month == 9].to_string())
 
     fig, ax = _line_axes()
-    for m in d.locales:
+    for m in d.lines:
         ax.plot(wide.index, wide[m], color=COLORS[m])
     top = wide.max().max()
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v / 1000:,.0f}K"))
     ax.set_ylim(0, top * 1.08)
     _mcauley_line(ax)
-    _end_labels(ax, {m: wide[m] for m in d.locales}, lambda v: f"{v / 1000:,.0f}K", min_gap=top * 0.045)
+    _end_labels(ax, {m: wide[m] for m in d.lines}, lambda v: f"{v / 1000:,.0f}K", min_gap=top * 0.045)
     ax.xaxis.set_major_locator(mdates.YearLocator(2))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
     _header(
         fig,
         "Keepa history runs years past the McAuley cutoff",
         "ASINs with at least one recorded price change in the month",
-        d.locales,
+        d.lines,
     )
     _note(
         fig,
         "Products enter through a 2023 review, so counts rise into 2023 and then fall as products are delisted.\n"
-        "Keepa records a point when a value changes; months without a change are not counted here.",
+        "Keepa records a point when a value changes; months without a change are not counted here." + d.lines_note(),
     )
     _save(fig, d.s, "tracked")
 
@@ -349,7 +355,7 @@ def fig_reviews(d: Data) -> None:
         WHERE l.period >= DATE '2023-09-01'
         GROUP BY 1, 2 ORDER BY 1, 2
     """)
-    wide = df.pivot(index="period", columns="mkt", values="idx")[d.locales]
+    wide = df.pivot(index="period", columns="mkt", values="idx")[d.lines]
     wide.index = pd.to_datetime(wide.index)
     base_n = df[df.period == df.period.min()].set_index("mkt")["n"]
     log.info(
@@ -357,21 +363,25 @@ def fig_reviews(d: Data) -> None:
     )
 
     fig, ax = _line_axes()
-    for m in d.locales:
+    for m in d.lines:
         ax.plot(wide.index, wide[m], color=COLORS[m])
     top = wide.max().max()
     ax.yaxis.set_major_formatter(PercentFormatter(1, decimals=0))
     ax.set_ylim(0, top * 1.1)
-    _end_labels(ax, {m: wide[m] for m in d.locales}, lambda v: f"+{v:.0%}", min_gap=top * 0.045)
+    _end_labels(ax, {m: wide[m] for m in d.lines}, lambda v: f"+{v:.0%}", min_gap=top * 0.045)
     ax.xaxis.set_major_locator(mdates.MonthLocator((1, 7)))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
     _header(
         fig,
         "Reviews keep arriving after the McAuley snapshot",
         "Median growth in review count since September 2023, for products with 10+ reviews then",
-        d.locales,
+        d.lines,
     )
-    _note(fig, f"{int(base_n.sum()):,} ASIN-marketplace pairs. Amazon shares reviews across some storefronts.")
+    _note(
+        fig,
+        f"{int(base_n.sum()):,} ASIN-marketplace pairs. Amazon shares reviews across some storefronts."
+        + d.lines_note(),
+    )
     _save(fig, d.s, "reviews")
 
 
@@ -393,7 +403,7 @@ def fig_price_gap(d: Data) -> None:
         GROUP BY 1, 2 HAVING count(*) >= 500 ORDER BY 1, 2
     """)
     df["gap"] = np.exp(df["med_log"]) - 1
-    others = [m for m in d.locales if m != ref and m in set(df["mkt"])]
+    others = [m for m in d.lines if m != ref and m in set(df["mkt"])]
     wide = df.pivot(index="period", columns="mkt", values="gap")[others]
     wide.index = pd.to_datetime(wide.index)
     log.info(
@@ -422,8 +432,9 @@ def fig_price_gap(d: Data) -> None:
     )
     _note(
         fig,
-        "Monthly Bank of Canada FX. UK and EU prices include 19-22% VAT; US and Canadian prices exclude sales tax.\n"
-        "Price = Amazon's own offer, else the lowest new offer; penny listings excluded.",
+        "Monthly Bank of Canada FX. Outside the US and Canada, listed prices include VAT or its local equivalent;\n"
+        "US and Canadian prices exclude sales tax. Price = Amazon's own offer, else the lowest new offer; "
+        "penny listings excluded." + d.lines_note(),
     )
     _save(fig, d.s, "price_gap")
 
@@ -473,7 +484,7 @@ def fig_events(d: Data, year: int = 2024, cut: float = 0.10) -> None:
         for _, a, b in EVENTS_2024:
             ax.axvspan(pd.Timestamp(a), pd.Timestamp(b) + pd.Timedelta(days=1), color=BAND, lw=0, zorder=0)
         ax.axhline(1, color=BASE, lw=1, zorder=1)
-        ax.plot(g["day"], g["idx"], color=COLORS[m], lw=1.4)
+        ax.plot(g["day"], g["idx"], color=COLORS.get(m, PALETTE[0]), lw=1.4)
         ax.text(0.01, 0.97, mkt.get(m).country, transform=ax.transAxes, fontsize=10, color=INK, va="top")
         ax.set_ylim(0, ymax)
         ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.0f}x"))

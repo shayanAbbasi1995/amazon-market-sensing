@@ -12,6 +12,7 @@ overdraw the bucket.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 
@@ -19,7 +20,7 @@ import requests
 
 log = logging.getLogger(__name__)
 
-BASE_URL = "https://api.keepa.com/product"
+API_ROOT = "https://api.keepa.com"
 MAX_ASINS_PER_REQUEST = 100
 
 # Retry pacing for *transient* failures — a lost/errored connection or a Keepa
@@ -96,23 +97,34 @@ class KeepaClient:
         if len(asins) > MAX_ASINS_PER_REQUEST:
             raise KeepaError(f"max {MAX_ASINS_PER_REQUEST} ASINs per request")
 
-        params = {
-            "key": self.key,
-            "domain": self.domain,
-            "asin": ",".join(asins),
-            "history": 1,
-            "rating": 1,
-            "update": -1,
-        }
+        params = {"asin": ",".join(asins), "history": 1, "rating": 1, "update": -1}
         if stats is not None:
             params["stats"] = stats
+        return self._get("product", params, timeout)
 
+    def query(self, selection: dict, timeout: int = 90) -> dict:
+        """Product Finder: ASINs matching a JSON selection (``asinList``, ``totalResults``).
+
+        Build the selection on keepa.com's Product Finder and copy it from
+        "Show API query". Pagination is ``page`` / ``perPage`` inside it.
+        """
+        return self._get("query", {"selection": json.dumps(selection)}, timeout)
+
+    def bestsellers(self, category: str | int, timeout: int = 90) -> list[str]:
+        """Best-seller ASINs of one Amazon category node, best-selling first."""
+        data = self._get("bestsellers", {"category": str(category)}, timeout)
+        return list((data.get("bestSellersList") or {}).get("asinList") or [])
+
+    def _get(self, path: str, params: dict, timeout: int) -> dict:
+        """GET one Keepa endpoint with the retry policy described in :meth:`fetch`."""
+        params = {"key": self.key, "domain": self.domain, **params}
+        url = f"{API_ROOT}/{path}"
         backoff = RETRY_BACKOFF_START
         attempt = 0
         while True:
             attempt += 1
             try:
-                resp = self.session.get(BASE_URL, params=params, timeout=timeout)
+                resp = self.session.get(url, params=params, timeout=timeout)
             except requests.RequestException as exc:
                 # Connection down / DNS failure / timeout — the internet is out.
                 # Wait it out and retry forever; never give up on this batch.

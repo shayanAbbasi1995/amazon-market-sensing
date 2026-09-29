@@ -26,6 +26,7 @@ DEFAULT_PATHS: dict[str, str] = {
     "data": "./data",
     "reviews": "{data}/{category}/mcauley/reviews.parquet",
     "metadata": "{data}/{category}/mcauley/metadata.parquet",
+    "seed": "{data}/{category}/seed_asins.parquet",
     "universe": "{data}/{category}/universe.parquet",
     "keepa": "{data}/{category}/keepa/{CODE}",
     "panels": "{data}/{category}/panels/{CODE}",
@@ -33,6 +34,8 @@ DEFAULT_PATHS: dict[str, str] = {
     "tmp": "{data}/duckdb_tmp",
     "figures": "./figures",
 }
+
+ASIN_SOURCES = ("mcauley", "file", "keepa_finder", "keepa_bestsellers")
 
 DEFAULT_CLEANING: dict[str, float] = {
     "price_ceiling_usd": 10_000.0,
@@ -62,6 +65,7 @@ class Settings:
     cleaning: dict[str, Any]
     panels: tuple[str, ...]
     panel_batches: int
+    asin_source: dict[str, Any]
     duckdb_memory_limit: str
     duckdb_threads: int
     paths: dict[str, str]
@@ -100,6 +104,10 @@ class Settings:
     @property
     def meta_path(self) -> Path:
         return self._resolve("metadata")
+
+    @property
+    def seed_path(self) -> Path:
+        return self._resolve("seed")
 
     @property
     def universe_path(self) -> Path:
@@ -147,7 +155,7 @@ def load(path: str | Path | None = None) -> Settings:
     raw: dict[str, Any] = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
     if "category" not in raw:
-        raise SystemExit(f"{path}: 'category' is required (a McAuley 2023 category name)")
+        raise SystemExit(f"{path}: 'category' is required (a McAuley category, or a label for your own ASIN list)")
 
     window = raw.get("review_window") or {}
     locales = tuple(m.lower() for m in raw.get("marketplaces", ["us"]))
@@ -158,6 +166,21 @@ def load(path: str | Path | None = None) -> Settings:
         raise SystemExit(f"reference_marketplace {ref!r} is not in marketplaces {locales}")
 
     keepa = raw.get("keepa") or {}
+    asins = {
+        "source": "mcauley",
+        "file": None,
+        "column": "asin",
+        "finder_selection": None,
+        "bestseller_categories": [],
+        "max_asins": None,
+        **(raw.get("asins") or {}),
+    }
+    if asins["source"] not in ASIN_SOURCES:
+        raise SystemExit(f"asins.source must be one of {ASIN_SOURCES}, got {asins['source']!r}")
+    for k in ("file", "finder_selection"):  # relative to the config file, like paths
+        if asins[k]:
+            f = Path(asins[k]).expanduser()
+            asins[k] = str(f if f.is_absolute() else (base / f).resolve())
     panels = raw.get("panels") or {}
     duck = raw.get("duckdb") or {}
     stats = keepa.get("stats")
@@ -174,6 +197,7 @@ def load(path: str | Path | None = None) -> Settings:
         cleaning={**DEFAULT_CLEANING, **(raw.get("cleaning") or {})},
         panels=tuple(panels.get("build", ["monthly_obs", "monthly_locf", "weekly_locf"])),
         panel_batches=int(panels.get("batches", 16)),
+        asin_source=asins,
         duckdb_memory_limit=str(duck.get("memory_limit", "8GB")),
         duckdb_threads=int(duck.get("threads", 4)),
         paths={**DEFAULT_PATHS, **(raw.get("paths") or {})},
